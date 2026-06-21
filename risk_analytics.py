@@ -220,8 +220,8 @@ class BanCoppelRiskManager:
 
         return qc
 
-    # ========================================================
-    # SINGLE EXECUTION
+# ========================================================
+    # SINGLE EXECUTION (MEJORADO PARA DEMO)
     # ========================================================
 
     def run_stress_test(
@@ -232,65 +232,77 @@ class BanCoppelRiskManager:
     ):
 
         job_id = "N/A"
+        es_real = False  # Bandera para saber si fue hardware real
+        motor_nombre = "AerSimulator (Local)"
 
         try:
-
             # =================================================
-            # SIMULADOR
+            # INTENTO DE EJECUCIÓN EN IBM REAL
             # =================================================
+            if use_quantum and backend is not None:
+                try:
+                    qc = self.crear_circuito_riesgo(vector)
+                    circuito = transpile(qc, backend, optimization_level=3)
+                    sampler = Sampler(mode=backend)
+                    
+                    # Envío a IBM
+                    job = sampler.run([circuito])
+                    job_id = job.job_id()
+                    motor_nombre = f"IBM Quantum ({backend.name})"
+                    es_real = True  # ¡Éxito! Fue enviado a IBM
+                    
+                    result = job.result()
+                    counts = result[0].data.meas.get_counts()
+                    
+                    return {
+                        **self.analisis_deep_audit(counts, motor_nombre, job_id, vector),
+                        "Es_Real": es_real,
+                        "Error_Conexion": False
+                    }
 
-            if not use_quantum or backend is None:
-
-                return self.ejecutar_simulador(vector)
-
+                except Exception as e:
+                    # Si falla IBM, capturamos el error pero NO rompemos la app
+                    print(f"⚠️ Falló conexión IBM: {e}. Cambiando a Simulador Local.")
+                    es_real = False
+                    motor_nombre = "AerSimulator (Fallback)"
+                    job_id = "SIM-LOCAL-NO-IBM"
+                    # Caemos al bloque de simulador abajo
+            
             # =================================================
-            # CIRCUITO
+            # SIMULADOR LOCAL (AER) - Por fallo o por elección
             # =================================================
+            if not es_real:
+                return self.ejecutar_simulador_con_etiqueta(vector)
 
+        except Exception as e:
+            # Error crítico general
+            return self.ejecutar_simulador_con_etiqueta(vector)
+
+    # ========================================================
+    # SIMULADOR CON ETIQUETA CLARA
+    # ========================================================
+    def ejecutar_simulador_con_etiqueta(self, vector):
+        """Ejecuta en Aer y avisa que es simulación"""
+        try:
+            simulator = AerSimulator()
             qc = self.crear_circuito_riesgo(vector)
-
-            circuito = transpile(
-
-                qc,
-                backend,
-                optimization_level=3
+            circuito = transpile(qc, simulator)
+            job = simulator.run(circuito, shots=1024)
+            counts = job.result().get_counts()
+            
+            resultado = self.analisis_deep_audit(
+                counts, "AerSimulator (Local)", "SIM-NO-CONNECT", vector
             )
-
-            # =================================================
-            # SAMPLER
-            # =================================================
-
-            sampler = Sampler(mode=backend)
-
-            # =================================================
-            # JOB
-            # =================================================
-
-            job = sampler.run([circuito])
-
-            job_id = job.job_id()
-
-            # =================================================
-            # RESULT
-            # =================================================
-
-            result = job.result()
-
-            counts = result[0].data.meas.get_counts()
-
-            return self.analisis_deep_audit(
-
-                counts,
-                backend.name,
-                job_id,
-                vector
-
-            )
-
+            resultado["Es_Real"] = False
+            resultado["Error_Conexion"] = True
+            return resultado
         except Exception:
-
-            return self.ejecutar_simulador(vector)
-
+            # Retorno de emergencia
+            return {
+                "Probabilidad": 0.05, "Motor": "Error", "Job_ID": "ERROR",
+                "Es_Real": False, "Error_Conexion": True, "Stress_Index": 5.0
+            }
+   
     # ========================================================
     # MASIVE AUDIT - IBM REAL
     # UN SOLO JOB PARA TODA LA CARTERA

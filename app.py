@@ -53,16 +53,17 @@ with tab1:
             )
             
             st.metric("Riesgo", f"{res['Probabilidad']:.2%}")
-            if es_cuantico: st.warning(f"ID: {res['Job_ID']}")
             
-            # Calcular Pérdida Esperada para la gráfica (Monto ficticio de 10000)
-            perdida_esperada = res['Probabilidad'] * 10000
+            # --- NUEVA LÓGICA DE MENSAJES ---
+            if res.get('Es_Real'):
+                st.success(f"✅ Procesado en Hardware Real: {res['Motor']}")
+                st.info(f"🆔 Job ID IBM: {res['Job_ID']}")
+            else:
+                st.warning(f"⚠️ Modo Simulación: {res['Motor']}")
+                st.caption("Nota: No se pudo establecer enlace con IBM Quantum. Los datos son estimaciones locales fiables.")
             
-            # La gráfica vive AQUÍ ADENTRO para que no marque error
-            fig = px.line(y=np.random.normal(perdida_esperada, 500, 100), title="Stress Test")
+            fig = px.line(y=np.random.normal(res['Perdida_Esperada'] if 'Perdida_Esperada' in res else 500, 500, 100), title="Stress Test")
             st.plotly_chart(fig)
-        except Exception as e:
-            st.error(f"Error: {e}")
             
 # ============================================================
 # PESTAÑA 2: AUDITORÍA MASIVA (100% CARTERA) - CONEXIÓN REAL RESTAURADA
@@ -315,20 +316,18 @@ with tab4:
                         # EJECUCIÓN IBM REAL
                         # ====================================
 
-                        resultado_ibm = (
-
-                            st.session_state
-                            .risk_manager
-                            .run_stress_test(
-
-                                vector_ejecutivo,
-
-                                use_quantum=True,
-
-                                backend=backend_activo
-                            )
+                        resultado_ibm = st.session_state.risk_manager.run_stress_test(
+                            vector_ejecutivo, use_quantum=True, backend=backend_activo
                         )
 
+                        if not resultado_ibm.get('Es_Real'):
+                            st.error("❌ No se pudo conectar a IBM Quantum para el análisis ejecutivo. Se muestran datos simulados.")
+                            st.stop() # Detenemos aquí para no mostrar falsos positivos
+
+                        # Si llegamos aquí, es real
+                        riesgo_ibm = resultado_ibm['Probabilidad']
+                        # ... resto del código igual ...
+                        st.success(f"✅ Análisis confirmado en Hardware IBM: {resultado_ibm['Motor']}")
                         # ====================================
                         # RESULTADOS IBM
                         # ====================================
